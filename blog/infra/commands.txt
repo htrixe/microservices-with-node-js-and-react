@@ -1,0 +1,208 @@
+kubectl apply -f posts.yaml 
+kubectl get pods
+
+
+If your pods are showing ErrImagePull, ErrImageNeverPull, or ImagePullBackOff errors after running kubectl apply, the simplest solution is to provide an imagePullPolicy to the pod.
+
+First, run kubectl delete -f infra/k8s/
+
+Then, update your pod manifest:
+
+spec:
+  containers:
+    - name: posts
+      image: cygnet/posts:0.0.1
+      imagePullPolicy: Never
+Then, run kubectl apply -f infra/k8s/
+
+This will ensure that Kubernetes will use the image built locally from your image cache instead of attempting to pull from a registry.
+
+Minikube Users:
+
+If you are using a vm driver, you will need to tell Kubernetes to use the Docker daemon running inside of the single node cluster instead of the host.
+
+Run the following command:
+
+eval $(minikube docker-env)
+
+Note - This command will need to be repeated anytime you close and restart the terminal session.
+
+Afterward, you can build your image:
+
+docker build -t USERNAME/REPO .
+
+Update, your pod manifest as shown above and then run:
+
+kubectl apply -f infra/k8s/
+
+https://minikube.sigs.k8s.io/docs/commands/docker-env/
+
+----------------------------------------------------------------
+run kubectl apply -f posts-srv.yaml 
+kubectl get services
+kubectl describe service posts-srv
+
+Cluster ip services : 
+  - docker build -t USERNAME/event-bus .
+  - docker push -t USERNAME/event-bus
+  - cd infra/k8s/
+  - run kubectl apply -f event-bus-depl.yaml 
+
+----------------------------------------------------------------
+  
+ Ingress Nginx Installation Info
+
+Note - Windows  should be using Docker Desktop with WSL2 and not Minikube. The Minikube instructions provided below are intended for Linux users only.
+
+Installation - Docker Desktop (macOS and Windows WSL2)
+
+https://kubernetes.github.io/ingress-nginx/deploy/#quick-start
+
+Installation - Minikube (Linux)
+
+https://kubernetes.github.io/ingress-nginx/deploy/#minikube
+
+----------------------------------------------------------------
+When running kubectl apply in the upcoming lecture, you may encounter a warning or error about the v1beta1 API version that is being used.
+
+The v1 Ingress API is now required as of Kubernetes v1.22 and the v1beta1 will no longer work.
+
+Only a few very minor changes are needed:
+
+https://kubernetes.io/docs/concepts/services-networking/ingress/
+
+Notably, a pathType needs to be added, and how we specify the backend service name and port has changed:
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ingress-srv
+  annotations:
+    kubernetes.io/ingress.class: nginx
+spec:
+  rules:
+    - host: posts.com
+      http:
+        paths:
+          - path: /posts
+            pathType: Prefix
+            backend:
+              service:
+                name: posts-clusterip-srv
+                port:
+                  number: 4000
+The zip resources attached to each lecture will contain the updated v1 API Ingress code if you need it.
+
+
+----------------------------------------------------------------
+
+we can access posts.com/posts in our browser. If you are unable to access the application you may have something already running on port 80, which is the default port for the ingress. Before doing anything, please make sure you have properly installed the ingress-nginx controller for your particular Kubernetes client. Many students are skipping this step!
+
+https://www.udemy.com/course/microservices-with-node-js-and-react/learn/lecture/26492690#questions
+
+Once you have confirmed that you have indeed installed/enabled the ingress-nginx controller, you'll need to identify if something is running on port 80 and shut it down. Some students have even had applications from other courses or personal projects still running. For Windows Pro users, both SQL Server Reporting Services (MSSQLSERVER) and the World Wide Web Publishing Service / IIS Server have been the most common services causing a conflict.
+
+To determine what might be using this port, in your terminal run:
+
+Windows
+Using Powershell with elevated permissions:
+
+netstat -anb
+
+Scroll to the top of the returned output and find the listing for port 80. If Docker is properly listening on port 80 you should see:
+
+TCP   0.0.0.0:80   0.0.0.0:0   LISTENING
+
+[com.docker.backend.exe]
+
+If something else is listed for TCP 0.0.0.0:80, you'll need to shut that service down.
+
+macOS
+sudo lsof -i tcp:80
+
+If Docker is properly listening on port 80 you should see something very similar:
+
+COMMAND    PID USER   FD   TYPE             DEVICE SIZE/OFF NODE NAME
+
+com.docke 8263 user  113u  IPv6 0xa20e89998489120d      0t0  TCP *:http (LISTEN)
+
+If something else is listed for TCP *:http, you'll need to shut that service down.
+
+
+
+Note - Minikube users on Windows and macOS should also make sure that they aren't using the docker driver which is not compatible with an ingress as noted here:
+
+
+----------------------------------------------------------------
+
+Important Note to Add Environment Variable
+Please don't skip this!  You must make a small change to get a step shown in the next video to work correctly!
+
+The next video is going to show the deployment of the React app to our Kubernetes cluster.  The React app will be running in a Docker container.
+
+Unfortunately, create-react-app currently has two bugs that prevent it from running correctly in a docker container:
+
+https://github.com/facebook/create-react-app/issues/8688
+
+https://github.com/facebook/create-react-app/issues/11779
+
+
+
+To solve this, we have to add two environment variables to the Dockerfile in the client folder.  Find the Dockerfile in the client folder and make the following change:
+
+FROM node:alpine
+ 
+# Add the following lines
+ENV CI=true
+ENV WDS_SOCKET_PORT=0
+ 
+WORKDIR /app
+COPY package.json ./
+RUN npm install
+COPY ./ ./
+ 
+CMD ["npm", "start"]
+Then save the file.  That's it!  Continue on to the next video.
+
+------------------------------------------------------------------------------------------------
+
+kubectl rollout restart deployment client-depl
+kubectl rollout restart deployment posts-depl
+
+kubectl apply -f ingress-srv.yaml 
+
+------------------------------------------------------------------------------------------------
+
+The v2Alpha3 API version of Skaffold that is used in the course is a few versions behind. Based on all of our recent testing this should still be supported and work without any errors or issues.
+
+skaffold schema list will return the API versions that are supported by the version of Skaffold you have installed.
+
+That said, some students may want to upgrade their skaffold config. There is a very easy way to do this by just running skaffold fix from your terminal:
+
+https://skaffold.dev/docs/references/cli/#skaffold-fix
+
+The main difference between the two APIs is that the deploy and kubectl fields no longer exist:
+
+apiVersion: skaffold/v2alpha3
+kind: Config
+deploy:
+  kubectl:
+    manifests:
+      - ./infra/k8s/*
+...
+Should now be written as:
+
+apiVersion: skaffold/v4beta3
+kind: Config
+manifests:
+  rawYaml:
+    - ./infra/k8s/*
+...
+Attached to this lecture is a full example of the course code using the new API as a zip file.
+
+Resources for this lecture
+
+
+
+
+-------------->  skaffold dev
